@@ -11,6 +11,7 @@ fn basics() {
     assert_eq!(map.get(&"hello"), Some(&"你好"));
     assert_eq!(map.get(&"world"), Some(&"世界"));
     assert_eq!(map.get(&"abcdefg"), None);
+    assert_eq!(map.len(), 2);
 }
 
 #[test]

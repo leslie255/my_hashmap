@@ -107,7 +107,7 @@ impl<K, V> Bucket<K, V> {
         }
         if let Some(others) = self.others.into_option() {
             for (k, v) in others {
-                f(k, v)
+                f(k, v);
             }
         }
     }
@@ -144,20 +144,25 @@ where
     fn get<'a>(&'a self, k: &K) -> Option<&'a V> {
         match &self.first {
             Option_::Some((k0, v)) if k == k0 => Some(v),
-            _ => self.find_in_others(k),
+            _ => self
+                .others
+                .as_option()?
+                .iter()
+                .find(|(k0, _)| k0 == k)
+                .map(|(_, v)| v),
         }
     }
 
-    fn find_in_others<'a>(&'a self, k: &K) -> Option<&'a V> {
-        self.others
-            .as_option()
-            .as_ref()?
-            .iter()
-            .find_map(|(k0, v)| if k0 == k { Some(v) } else { None })
-    }
-
-    fn get_mut<'a>(&'a mut self, _k: &K) -> Option<&'a mut V> {
-        todo!()
+    fn get_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
+        match &mut self.first {
+            Option_::Some((k0, v)) if k == k0 => Some(v),
+            _ => self
+                .others
+                .as_option_mut()?
+                .iter_mut()
+                .find(|(k0, _)| k0 == k)
+                .map(|(_, v)| v),
+        }
     }
 }
 
@@ -210,6 +215,7 @@ where
         }
     }
 
+    /// This function is `pub(crate)` for use in testing.
     pub(crate) fn resize(&mut self, new_capacity: usize) {
         if K::IS_ZST && V::IS_ZST {
             return;
@@ -254,6 +260,7 @@ where
     }
 
     pub fn reserve(&mut self, additional: usize) {
+        // FIXME: Reserve more aggressively here.
         self.reserve_exact(additional);
     }
 
@@ -262,6 +269,10 @@ where
         if self.capacity() < new_capacity {
             self.resize(new_capacity);
         }
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.shrink_to(0)
     }
 
     pub fn shrink_to(&mut self, min_capacity: usize) {
