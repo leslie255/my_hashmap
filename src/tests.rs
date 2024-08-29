@@ -43,4 +43,12 @@ fn hash_collision() {
     map.insert(Thing(1), 20);
     assert_eq!(map.get(&Thing(0)), Some(&10));
     assert_eq!(map.get(&Thing(1)), Some(&20));
+    map.resize(32);
+    assert_eq!(map.capacity(), 32);
+    assert_eq!(map.get(&Thing(0)), Some(&10));
+    assert_eq!(map.get(&Thing(1)), Some(&20));
+    map.resize(2);
+    assert_eq!(map.capacity(), 2);
+    assert_eq!(map.get(&Thing(0)), Some(&10));
+    assert_eq!(map.get(&Thing(1)), Some(&20));
 }

@@ -105,6 +105,11 @@ impl<K, V> Bucket<K, V> {
         if let Option_::Some((k, v)) = self.first {
             f(k, v)
         }
+        if let Some(others) = self.others.into_option() {
+            for (k, v) in others {
+                f(k, v)
+            }
+        }
     }
 }
 
