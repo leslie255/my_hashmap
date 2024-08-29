@@ -12,6 +12,9 @@ fn basics() {
     assert_eq!(map.get(&"world"), Some(&"世界"));
     assert_eq!(map.get(&"abcdefg"), None);
     assert_eq!(map.len(), 2);
+    map.remove(&"world");
+    assert_eq!(map.get(&"world"), None);
+    assert_eq!(map.len(), 1);
 }
 
 #[test]
@@ -51,5 +54,8 @@ fn hash_collision() {
     map.resize(2);
     assert_eq!(map.capacity(), 2);
     assert_eq!(map.get(&Thing(0)), Some(&10));
+    assert_eq!(map.get(&Thing(1)), Some(&20));
+    map.remove(&Thing(0));
+    assert_eq!(map.get(&Thing(0)), None);
     assert_eq!(map.get(&Thing(1)), Some(&20));
 }

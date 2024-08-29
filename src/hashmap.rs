@@ -164,6 +164,27 @@ where
                 .map(|(_, v)| v),
         }
     }
+
+    fn remove(&mut self, k: &K) -> Option<V> {
+        match &mut self.first {
+            Option_::Some((k0, _)) if k == k0 => {
+                let (_, v) = mem::replace(&mut self.first, Option_::None).into_option()?;
+                if let Option_::Some(vec) = &mut self.others {
+                    self.first = vec.pop().into();
+                    if vec.is_empty() {
+                        self.others = Option_::None;
+                    }
+                }
+                Some(v)
+            }
+            _ => {
+                let others = self.others.as_option_mut()?;
+                let idx = others.iter().position(|(k0, _)| k == k0)?;
+                let (_, v) = others.remove(idx);
+                Some(v)
+            }
+        }
+    }
 }
 
 impl<K, V> HashMap<K, V> {
@@ -217,6 +238,7 @@ where
 
     /// This function is `pub(crate)` for use in testing.
     pub(crate) fn resize(&mut self, new_capacity: usize) {
+        // FIXME: Realloc instead of rehashing into a new allocation?
         if K::IS_ZST && V::IS_ZST {
             return;
         }
@@ -250,12 +272,18 @@ where
         self.buckets[idx].get_mut(key)
     }
 
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        self.len -= 1;
+        let idx = self.index(key)?;
+        self.buckets[idx].remove(key)
+    }
+
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.len += 1;
         self.expand_if_needed();
         // `unwrap` because `expand_if_needed` made sure that `capacity > 0`.
         let idx = self.index(&key).unwrap();
         let bucket = &mut self.buckets[idx];
-        self.len += 1;
         bucket.insert(key, value).map(|(_, v)| v)
     }
 

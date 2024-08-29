@@ -22,5 +22,5 @@ fn main() {
 - [x] Re-alloc / Rehash
 - [x] Hash collision handle
 - [ ] ZST
-- [ ] Remove
+- [x] Remove
 - [ ] Iterate
