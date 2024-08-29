@@ -20,6 +20,7 @@ fn main() {
 - [x] Insert
 - [x] Find
 - [x] Re-alloc / Rehash
-- [ ] Hash collision handle
+- [x] Hash collision handle
+- [ ] ZST
 - [ ] Remove
 - [ ] Iterate

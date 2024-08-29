@@ -1,6 +1,8 @@
 mod hashmap;
 use hashmap::HashMap;
 
+mod tests;
+
 fn main() {
     let mut map: HashMap<&str, &str> = HashMap::new();
     map.insert("hello", "你好");
