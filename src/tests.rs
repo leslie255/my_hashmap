@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 #[allow(unused_imports)]
 use super::hashmap::*;
 #[allow(unused_imports)]
@@ -58,4 +60,25 @@ fn hash_collision() {
     map.remove(&Thing(0));
     assert_eq!(map.get(&Thing(0)), None);
     assert_eq!(map.get(&Thing(1)), Some(&20));
+}
+
+#[test]
+fn everything() {
+    let mut map: HashMap<i32, i32> = HashMap::new();
+    for i in 0..100 {
+        map.insert(i, i * 2);
+    }
+    for i in 0..100 {
+        assert_eq!(map.get(&i), Some(&(i * 2)));
+    }
+    for i in 20..80 {
+        assert!(map.remove(&i).is_some());
+    }
+    map.shrink_to_fit();
+    for i in 0..20 {
+        assert_eq!(map.get(&i), Some(&(i * 2)));
+    }
+    for i in 80..100 {
+        assert_eq!(map.get(&i), Some(&(i * 2)));
+    }
 }

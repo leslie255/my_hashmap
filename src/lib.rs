@@ -1,2 +1,2 @@
-mod hashmap;
+pub mod hashmap;
 mod tests;

@@ -203,12 +203,20 @@ impl<K, V> HashMap<K, V> {
         self.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn capacity(&self) -> usize {
-        if K::IS_ZST && V::IS_ZST {
+        if Self::is_zst() {
             isize::MAX as usize // to match behavior of `Vec` and `HashMap` in std
         } else {
             self.buckets.len()
         }
+    }
+
+    const fn is_zst() -> bool {
+        K::IS_ZST && V::IS_ZST
     }
 }
 
@@ -221,11 +229,10 @@ where
     }
 
     fn expand_if_needed(&mut self) {
-        let need_expand = if K::IS_ZST && V::IS_ZST {
-            false
-        } else {
-            self.load_factor() > LOAD_FACTOR_MAX || self.capacity() == 0
-        };
+        if Self::is_zst() {
+            return;
+        }
+        let need_expand = self.load_factor() > LOAD_FACTOR_MAX || self.capacity() == 0;
         if need_expand {
             let new_capacity = if self.capacity() == 0 {
                 INIT_CAPACITY
@@ -237,20 +244,29 @@ where
     }
 
     /// This function is `pub(crate)` for use in testing.
+    /// # Panics
+    /// Panics if `new_capacity == 0` and `self.len() != 0`.
     pub(crate) fn resize(&mut self, new_capacity: usize) {
-        // FIXME: Realloc instead of rehashing into a new allocation?
-        if K::IS_ZST && V::IS_ZST {
+        if Self::is_zst() {
             return;
         }
+        // FIXME: Realloc instead of rehashing into a new allocation?
         let old_buckets: Vec<Bucket<K, V>> = {
             let mut buckets = Bucket::vec_of_empties(new_capacity);
             mem::swap(&mut self.buckets, &mut buckets);
             buckets
         };
-        for bucket in old_buckets {
-            bucket.for_each_kv(|k, v| {
-                let idx = self.index(&k).unwrap();
-                self.buckets[idx].insert(k, v);
+        if cfg!(debug_assertions) && new_capacity == 0 {
+            // Only do this assertion in debug mode, because it would panic anyways later during
+            // rehashing.
+            assert!(
+                self.is_empty(),
+                "`HashMap::resize` called with `new_capacity = 0`, but `self.len() > 0`"
+            );
+        }
+        for old_bucket in old_buckets {
+            old_bucket.for_each_kv(|k, v| {
+                self.bucket_mut(&k).unwrap().insert(k, v);
             });
         }
     }
@@ -262,29 +278,35 @@ where
         (hash as usize).checked_rem(self.buckets.len())
     }
 
-    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
+    /// Returns `None` if capacity is zero.
+    fn bucket<'a>(&'a self, key: &K) -> Option<&'a Bucket<K, V>> {
         let idx = self.index(key)?;
-        self.buckets[idx].get(key)
+        Some(self.buckets.get(idx).unwrap())
+    }
+
+    /// Returns `None` if capacity is zero.
+    fn bucket_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut Bucket<K, V>> {
+        let idx = self.index(key)?;
+        Some(self.buckets.get_mut(idx).unwrap())
+    }
+
+    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
+        self.bucket(key)?.get(key)
     }
 
     pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        let idx = self.index(key)?;
-        self.buckets[idx].get_mut(key)
+        self.bucket_mut(key)?.get_mut(key)
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
         self.len -= 1;
-        let idx = self.index(key)?;
-        self.buckets[idx].remove(key)
+        self.bucket_mut(key)?.remove(key)
     }
 
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         self.len += 1;
         self.expand_if_needed();
-        // `unwrap` because `expand_if_needed` made sure that `capacity > 0`.
-        let idx = self.index(&key).unwrap();
-        let bucket = &mut self.buckets[idx];
-        bucket.insert(key, value).map(|(_, v)| v)
+        self.bucket_mut(&key)?.insert(key, value).map(|(_, v)| v)
     }
 
     pub fn reserve(&mut self, additional: usize) {
@@ -305,7 +327,7 @@ where
 
     pub fn shrink_to(&mut self, min_capacity: usize) {
         let needed_capacity = (self.len() as f64 / LOAD_FACTOR_MAX) as usize;
-        self.resize(usize::min(needed_capacity, min_capacity));
+        self.resize(usize::max(needed_capacity, min_capacity));
     }
 }
 
