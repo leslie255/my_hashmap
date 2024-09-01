@@ -82,3 +82,12 @@ fn everything() {
         assert_eq!(map.get(&i), Some(&(i * 2)));
     }
 }
+
+#[test]
+fn zst() {
+    let mut map: HashMap<(), ()> = HashMap::new();
+    assert_eq!(map.capacity(), isize::MAX as usize);
+    assert_eq!(map.get(&()), None);
+    map.insert((), ());
+    assert_eq!(map.get(&()), Some(&()));
+}

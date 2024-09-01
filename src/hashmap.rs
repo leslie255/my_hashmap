@@ -92,11 +92,9 @@ impl<K, V> Bucket<K, V> {
         let mut vec = Vec::with_capacity(count);
         if count != 0 && (!K::IS_ZST && !V::IS_ZST) {
             // FIXME: Maybe UB?
-            unsafe {
-                std::ptr::write_bytes(vec.as_mut_ptr(), 0, count);
-                vec.set_len(count);
-            }
+            unsafe { std::ptr::write_bytes(vec.as_mut_ptr(), 0, count) };
         }
+        unsafe { vec.set_len(count) };
         vec
     }
 
@@ -215,6 +213,7 @@ impl<K, V> HashMap<K, V> {
         }
     }
 
+    /// If `K` and `V` are both ZSTs.
     const fn is_zst() -> bool {
         K::IS_ZST && V::IS_ZST
     }
@@ -229,17 +228,10 @@ where
     }
 
     fn expand_if_needed(&mut self) {
-        if Self::is_zst() {
-            return;
-        }
-        let need_expand = self.load_factor() > LOAD_FACTOR_MAX || self.capacity() == 0;
-        if need_expand {
-            let new_capacity = if self.capacity() == 0 {
-                INIT_CAPACITY
-            } else {
-                self.capacity() * 4
-            };
-            self.resize(new_capacity);
+        if self.buckets.is_empty() {
+            self.resize(INIT_CAPACITY);
+        } else if self.load_factor() > LOAD_FACTOR_MAX {
+            self.resize(self.capacity() * 4);
         }
     }
 
@@ -248,6 +240,7 @@ where
     /// Panics if `new_capacity == 0` and `self.len() != 0`.
     pub(crate) fn resize(&mut self, new_capacity: usize) {
         if Self::is_zst() {
+            self.buckets = Bucket::vec_of_empties(new_capacity);
             return;
         }
         // FIXME: Realloc instead of rehashing into a new allocation?
@@ -271,23 +264,25 @@ where
         }
     }
 
-    /// Hashes the key, returns an index.
+    /// Hashes the key, mod the hash by the number of buckets.
     /// Returns `None` if capacity is zero.
     fn index(&self, key: &K) -> Option<usize> {
         let hash = hash(DefaultHasher::new(), key);
         (hash as usize).checked_rem(self.buckets.len())
     }
 
+    /// The bucket for a key.
     /// Returns `None` if capacity is zero.
     fn bucket<'a>(&'a self, key: &K) -> Option<&'a Bucket<K, V>> {
         let idx = self.index(key)?;
-        Some(self.buckets.get(idx).unwrap())
+        Some(&self.buckets[idx])
     }
 
+    /// The bucket for a key.
     /// Returns `None` if capacity is zero.
     fn bucket_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut Bucket<K, V>> {
         let idx = self.index(key)?;
-        Some(self.buckets.get_mut(idx).unwrap())
+        Some(&mut self.buckets[idx])
     }
 
     pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
