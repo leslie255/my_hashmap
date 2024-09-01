@@ -15,6 +15,7 @@ impl<T> IsZst for T {
     const IS_ZST: bool = size_of::<Self>() == 0;
 }
 
+#[derive(Clone)]
 pub struct HashMap<K, V> {
     buckets: Vec<Bucket<K, V>>,
     len: usize,
@@ -139,27 +140,27 @@ where
         }
     }
 
-    fn get<'a>(&'a self, k: &K) -> Option<&'a V> {
+    fn get<'a>(&'a self, k: &K) -> Option<(&'a K, &'a V)> {
         match &self.first {
-            Option_::Some((k0, v)) if k == k0 => Some(v),
+            Option_::Some((k0, v)) if k == k0 => Some((k0, v)),
             _ => self
                 .others
                 .as_option()?
                 .iter()
                 .find(|(k0, _)| k0 == k)
-                .map(|(_, v)| v),
+                .map(|(k, v)| (k, v)),
         }
     }
 
-    fn get_mut<'a>(&'a mut self, k: &K) -> Option<&'a mut V> {
+    fn get_mut<'a>(&'a mut self, k: &K) -> Option<(&'a mut K, &'a mut V)> {
         match &mut self.first {
-            Option_::Some((k0, v)) if k == k0 => Some(v),
+            Option_::Some((k0, v)) if k == k0 => Some((k0, v)),
             _ => self
                 .others
                 .as_option_mut()?
                 .iter_mut()
                 .find(|(k0, _)| k0 == k)
-                .map(|(_, v)| v),
+                .map(|(k, v)| (k, v)),
         }
     }
 
@@ -216,6 +217,12 @@ impl<K, V> HashMap<K, V> {
     /// If `K` and `V` are both ZSTs.
     const fn is_zst() -> bool {
         K::IS_ZST && V::IS_ZST
+    }
+}
+
+impl<K, V> Default for HashMap<K, V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -285,12 +292,20 @@ where
         Some(&mut self.buckets[idx])
     }
 
-    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
+    pub fn get_kv<'a>(&'a self, key: &K) -> Option<(&'a K, &'a V)> {
         self.bucket(key)?.get(key)
     }
 
-    pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
+        self.get_kv(key).map(|(_, v)| v)
+    }
+
+    pub fn get_mut_kv<'a>(&'a mut self, key: &K) -> Option<(&'a mut K, &'a mut V)> {
         self.bucket_mut(key)?.get_mut(key)
+    }
+
+    pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+        self.get_mut_kv(key).map(|(_, v)| v)
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
@@ -298,10 +313,14 @@ where
         self.bucket_mut(key)?.remove(key)
     }
 
-    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+    pub fn insert_kv(&mut self, key: K, value: V) -> Option<(K, V)> {
         self.len += 1;
         self.expand_if_needed();
-        self.bucket_mut(&key)?.insert(key, value).map(|(_, v)| v)
+        self.bucket_mut(&key)?.insert(key, value)
+    }
+
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.insert_kv(key, value).map(|(_, v)| v)
     }
 
     pub fn reserve(&mut self, additional: usize) {
@@ -326,8 +345,44 @@ where
     }
 }
 
-impl<K, V> Default for HashMap<K, V> {
+#[derive(Clone)]
+pub struct HashSet<T> {
+    map: HashMap<T, ()>,
+}
+
+impl<T> HashSet<T> {
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            map: HashMap::with_capacity(capacity),
+        }
+    }
+}
+
+impl<T> Default for HashSet<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl<T> HashSet<T>
+where
+    T: Hash + Eq,
+{
+    pub fn get<'a>(&'a self, key: &T) -> Option<&'a T> {
+        self.map.get_kv(key).map(|(k, ())| k)
+    }
+
+    pub fn get_mut<'a>(&'a mut self, key: &T) -> Option<&'a mut T> {
+        self.map.get_mut_kv(key).map(|(k, ())| k)
+    }
+
+    pub fn insert(&mut self, key: T) -> Option<T> {
+        self.map.insert_kv(key, ()).map(|(k, ())| k)
     }
 }
