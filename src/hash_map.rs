@@ -1,7 +1,9 @@
 use std::{
     collections::hash_map::DefaultHasher,
+    fmt::{self, Debug},
     hash::{Hash, Hasher},
     mem::{self, size_of},
+    option, slice, vec,
 };
 
 const LOAD_FACTOR_MAX: f64 = 0.75;
@@ -19,6 +21,16 @@ impl<T> IsZst for T {
 pub struct HashMap<K, V> {
     buckets: Vec<Bucket<K, V>>,
     len: usize,
+}
+
+impl<K, V> Debug for HashMap<K, V>
+where
+    K: Debug,
+    V: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_map().entries(self).finish()
+    }
 }
 
 fn hash(mut hasher: impl Hasher, x: impl Hash) -> u64 {
@@ -109,6 +121,53 @@ impl<K, V> Bucket<K, V> {
                 f(k, v);
             }
         }
+    }
+
+    fn iter(&self) -> BucketIter<K, V> {
+        self.into_iter()
+    }
+
+    fn iter_mut(&mut self) -> BucketIterMut<K, V> {
+        self.into_iter()
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a Bucket<K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = BucketIter<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        BucketIter::new(
+            self.first.as_option(),
+            self.others
+                .as_option()
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        )
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a mut Bucket<K, V> {
+    type Item = (&'a mut K, &'a mut V);
+    type IntoIter = BucketIterMut<'a, K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        BucketIterMut::new(
+            self.first.as_option_mut(),
+            self.others
+                .as_option_mut()
+                .map(Vec::as_mut_slice)
+                .unwrap_or_default(),
+        )
+    }
+}
+
+impl<K, V> IntoIterator for Bucket<K, V> {
+    type Item = (K, V);
+    type IntoIter = BucketIntoIter<K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        BucketIntoIter::new(
+            self.first.into_option(),
+            self.others.into_option().unwrap_or_default(),
+        )
     }
 }
 
@@ -214,9 +273,47 @@ impl<K, V> HashMap<K, V> {
         }
     }
 
+    pub fn iter(&self) -> Iter<K, V> {
+        self.into_iter()
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+        self.into_iter()
+    }
+
     /// If `K` and `V` are both ZSTs.
     const fn is_zst() -> bool {
         K::IS_ZST && V::IS_ZST
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a HashMap<K, V> {
+    type Item = (&'a K, &'a V);
+
+    type IntoIter = Iter<'a, K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Iter::new(&self.buckets)
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a mut HashMap<K, V> {
+    type Item = (&'a mut K, &'a mut V);
+
+    type IntoIter = IterMut<'a, K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IterMut::new(&mut self.buckets)
+    }
+}
+
+impl<K, V> IntoIterator for HashMap<K, V> {
+    type Item = (K, V);
+
+    type IntoIter = IntoIter<K, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter::new(self.buckets)
     }
 }
 
@@ -346,43 +443,188 @@ where
 }
 
 #[derive(Clone)]
-pub struct HashSet<T> {
-    map: HashMap<T, ()>,
+struct BucketIter<'a, K, V> {
+    first: option::IntoIter<&'a (K, V)>,
+    others: slice::Iter<'a, (K, V)>,
 }
 
-impl<T> HashSet<T> {
-    pub fn new() -> Self {
+impl<'a, K, V> BucketIter<'a, K, V> {
+    fn new(first: Option<&'a (K, V)>, others: &'a [(K, V)]) -> Self {
         Self {
-            map: HashMap::new(),
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            map: HashMap::with_capacity(capacity),
+            first: first.into_iter(),
+            others: others.iter(),
         }
     }
 }
 
-impl<T> Default for HashSet<T> {
-    fn default() -> Self {
-        Self::new()
+impl<'a, K, V> Iterator for BucketIter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((k, v)) = self.first.next() {
+            return Some((k, v));
+        }
+        self.others.next().map(|(k, v)| (k, v))
     }
 }
 
-impl<T> HashSet<T>
-where
-    T: Hash + Eq,
-{
-    pub fn get<'a>(&'a self, key: &T) -> Option<&'a T> {
-        self.map.get_kv(key).map(|(k, ())| k)
-    }
+struct BucketIterMut<'a, K, V> {
+    first: option::IntoIter<&'a mut (K, V)>,
+    others: slice::IterMut<'a, (K, V)>,
+}
 
-    pub fn get_mut<'a>(&'a mut self, key: &T) -> Option<&'a mut T> {
-        self.map.get_mut_kv(key).map(|(k, ())| k)
+impl<'a, K, V> BucketIterMut<'a, K, V> {
+    fn new(first: Option<&'a mut (K, V)>, others: &'a mut [(K, V)]) -> Self {
+        Self {
+            first: first.into_iter(),
+            others: others.iter_mut(),
+        }
     }
+}
 
-    pub fn insert(&mut self, key: T) -> Option<T> {
-        self.map.insert_kv(key, ()).map(|(k, ())| k)
+impl<'a, K, V> Iterator for BucketIterMut<'a, K, V> {
+    type Item = (&'a mut K, &'a mut V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((k, v)) = self.first.next() {
+            return Some((k, v));
+        }
+        self.others.next().map(|(k, v)| (k, v))
+    }
+}
+
+#[derive(Clone)]
+struct BucketIntoIter<K, V> {
+    first: option::IntoIter<(K, V)>,
+    others: vec::IntoIter<(K, V)>,
+}
+
+impl<K, V> BucketIntoIter<K, V> {
+    fn new(first: Option<(K, V)>, others: Vec<(K, V)>) -> Self {
+        Self {
+            first: first.into_iter(),
+            others: others.into_iter(),
+        }
+    }
+}
+
+impl<K, V> Iterator for BucketIntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some((k, v)) = self.first.next() {
+            return Some((k, v));
+        }
+        self.others.next()
+    }
+}
+
+#[derive(Clone)]
+pub struct Iter<'a, K, V> {
+    buckets: slice::Iter<'a, Bucket<K, V>>,
+    current_bucket: Option<BucketIter<'a, K, V>>,
+}
+
+impl<'a, K, V> Iter<'a, K, V> {
+    fn new(buckets: &'a [Bucket<K, V>]) -> Self {
+        Self {
+            buckets: buckets.iter(),
+            current_bucket: None,
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match &mut self.current_bucket {
+                Some(bucket_iter) => match bucket_iter.next() {
+                    Some(kv) => break Some(kv),
+                    None => {
+                        self.current_bucket = self.buckets.next().map(Bucket::iter);
+                        continue;
+                    }
+                },
+                None => {
+                    self.current_bucket = Some(self.buckets.next().map(Bucket::iter)?);
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+pub struct IterMut<'a, K, V> {
+    buckets: slice::IterMut<'a, Bucket<K, V>>,
+    current_bucket: Option<BucketIterMut<'a, K, V>>,
+}
+
+impl<'a, K, V> IterMut<'a, K, V> {
+    fn new(buckets: &'a mut [Bucket<K, V>]) -> Self {
+        Self {
+            buckets: buckets.iter_mut(),
+            current_bucket: None,
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = (&'a mut K, &'a mut V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match &mut self.current_bucket {
+                Some(bucket_iter) => match bucket_iter.next() {
+                    Some(kv) => break Some(kv),
+                    None => {
+                        self.current_bucket = self.buckets.next().map(Bucket::iter_mut);
+                        continue;
+                    }
+                },
+                None => {
+                    self.current_bucket = Some(self.buckets.next().map(Bucket::iter_mut)?);
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct IntoIter<K, V> {
+    buckets: vec::IntoIter<Bucket<K, V>>,
+    current_bucket: Option<BucketIntoIter<K, V>>,
+}
+
+impl<K, V> IntoIter<K, V> {
+    fn new(buckets: Vec<Bucket<K, V>>) -> Self {
+        Self {
+            buckets: buckets.into_iter(),
+            current_bucket: None,
+        }
+    }
+}
+
+impl<K, V> Iterator for IntoIter<K, V> {
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match &mut self.current_bucket {
+                Some(bucket_iter) => match bucket_iter.next() {
+                    Some(kv) => break Some(kv),
+                    None => {
+                        self.current_bucket = self.buckets.next().map(Bucket::into_iter);
+                        continue;
+                    }
+                },
+                None => {
+                    self.current_bucket = Some(self.buckets.next().map(Bucket::into_iter)?);
+                    continue;
+                }
+            }
+        }
     }
 }

@@ -23,4 +23,4 @@ fn main() {
 - [x] Hash collision handle
 - [x] ZST
 - [x] Remove
-- [ ] Iterate
+- [x] Iterate

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 #[allow(unused_imports)]
-use super::hashmap::*;
+use super::hash_map::*;
 #[allow(unused_imports)]
 use std::hash::{Hash, Hasher};
 
@@ -90,4 +90,35 @@ fn zst() {
     assert_eq!(map.get(&()), None);
     map.insert((), ());
     assert_eq!(map.get(&()), Some(&()));
+}
+
+#[test]
+fn iter() {
+    let mut map: HashMap<i32, i32> = HashMap::new();
+    for i in 0..10 {
+        map.insert(i, i * 2);
+    }
+    map.resize(9); // to make sure a bucket holds more than one elements
+
+    // Non-mut borrowing iterator.
+    let mut pairs: Vec<(&i32, &i32)> = map.iter().collect();
+    pairs.sort_by(|(k0, _), (k1, _)| k0.cmp(k1)); // because hash map is unordered.
+    for i in 0..10 {
+        assert_eq!(pairs[i as usize], (&i, &(i * 2)));
+    }
+
+    // Mut borrowing iterator.
+    let mut pairs_mut: Vec<(&mut i32, &mut i32)> = map.iter_mut().collect();
+    pairs_mut.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
+    for i in 0..10 {
+        let (mut k, mut v) = (i, i * 2);
+        assert_eq!(pairs_mut[i as usize], (&mut k, &mut v));
+    }
+
+    // Owning iterator.
+    let mut into_pairs: Vec<(i32, i32)> = map.into_iter().collect();
+    into_pairs.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
+    for i in 0..10 {
+        assert_eq!(into_pairs[i as usize], (i, i * 2));
+    }
 }
